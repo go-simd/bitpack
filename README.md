@@ -1,5 +1,8 @@
 # bitpack
 
+[![CI](https://github.com/go-simd/bitpack/actions/workflows/ci.yml/badge.svg)](https://github.com/go-simd/bitpack/actions/workflows/ci.yml)
+![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+
 The **FastPFOR / simdcomp** bit-packing primitive in pure Go (CGO=0, stable Go,
 no GOEXPERIMENT): pack blocks of **128 `uint32`** values, each using exactly
 `bits` bits (1..32), into a tight little-endian bitstream — and the inverse.
@@ -14,6 +17,16 @@ the 128 integers are stored as 4 interleaved 32-int lanes. On amd64 the bulk run
 a generated **SSE2 / AVX2** kernel (one per bit-width, dispatched via
 `x/sys/cpu`); other arches use the scalar reference. Every path is byte-exact —
 verified by table tests, a scalar-equality test, and `FuzzPack`/`FuzzUnpack`.
+
+## Test coverage
+
+The Go code is at **100 % statement coverage**, gated in CI on the native amd64
+and arm64 jobs (the build fails below 100 %). Both amd64 kernel paths — the AVX2
+block-pair kernel and the SSE finisher — are driven directly by the force test on
+the native AVX2 runner. The coverage figure is of the Go code only — the
+generated `.s` SIMD kernels are not measured by `go test -cover`; they are
+validated by differential tests against the scalar reference plus the two fuzz
+targets.
 
 ## Performance
 
