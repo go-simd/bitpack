@@ -1,4 +1,4 @@
-//go:build amd64
+//go:build amd64 || ppc64le || s390x
 
 package bitpack
 
@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// TestPackBlock exercises the amd64 single-block packBlock/unpackBlock helpers
-// (thin wrappers over the per-width SSE kernel) for every width, checking the
-// packed bytes against the scalar reference and that unpackBlock recovers the
-// values. These helpers run the SSE2 kernel, which is baseline on every amd64.
+// TestPackBlock exercises the single-block packBlock/unpackBlock helpers (thin
+// wrappers over the per-width SIMD kernel) for every width, checking the packed
+// bytes against the scalar reference and that unpackBlock recovers the values.
+// These helpers run the baseline SIMD kernel of each arch (SSE2 on amd64, VSX on
+// ppc64le, the vector facility on s390x).
 func TestPackBlock(t *testing.T) {
 	for bits := 1; bits <= 32; bits++ {
 		src := randBlocks(1, bits, int64(bits)*53+9)

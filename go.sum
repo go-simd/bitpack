@@ -1,4 +1,2 @@
-github.com/go-asmgen/asmgen v0.4.0 h1:LCAixrI4dR1/M76Z6G8l0es+lWAL7FWjvWHFkLAOjWI=
-github.com/go-asmgen/asmgen v0.4.0/go.mod h1:IibpkV28/y0oiVlG8IzKvXXQ6aYBTPzDZw8X+cBNXNU=
 golang.org/x/sys v0.28.0 h1:Fksou7UEQUWlKvIdsqzJmUmCX3cZuD2+P3XyyzwMhlA=
 golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
