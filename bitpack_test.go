@@ -136,8 +136,8 @@ func FuzzPack(f *testing.F) {
 	f.Add(uint64(1), 1, 1)
 	f.Add(uint64(0xdeadbeef), 24, 3)
 	f.Fuzz(func(t *testing.T, seed uint64, bitsRaw, nbRaw int) {
-		bits := bitsRaw%32 + 1 // 1..32
-		nb := nbRaw%4 + 1      // 1..4 blocks
+		bits := int(uint(bitsRaw)%32) + 1 // 1..32
+		nb := int(uint(nbRaw)%4) + 1      // 1..4 blocks
 		src := randBlocks(nb, bits, int64(seed))
 		// SIMD output must equal scalar byte-for-byte.
 		got := make([]byte, PackedLen(len(src), bits))
@@ -159,8 +159,8 @@ func FuzzPack(f *testing.F) {
 func FuzzUnpack(f *testing.F) {
 	f.Add(uint64(7), 13, 2)
 	f.Fuzz(func(t *testing.T, seed uint64, bitsRaw, nbRaw int) {
-		bits := bitsRaw%32 + 1
-		nb := nbRaw%4 + 1
+		bits := int(uint(bitsRaw)%32) + 1
+		nb := int(uint(nbRaw)%4) + 1
 		// Build a valid packed stream from random data, unpack with the active
 		// path and with scalar, and require agreement.
 		src := randBlocks(nb, bits, int64(seed)+1)
