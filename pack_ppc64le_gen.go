@@ -38,6 +38,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/go-asmgen/asmgen/abi"
@@ -61,16 +62,49 @@ func vsOf(v string) string {
 }
 
 // ppcState carries the per-kernel constant pool: a set of shift counts that the
-// body needs, each emitted once as a data symbol and loaded into a count vector
-// just before the shift. To keep the schedule branch-free and avoid reloads we
-// load a count constant into V14 right before each shift that uses it.
+// body needs, each emitted once as a data symbol.
+//
+// The shift counts are loop-invariant (they are compile-time constants, just
+// materialised as 4xuint32 vectors because VSLW/VSRW take a per-word count
+// vector). The earlier generator reloaded each one with MOVD+LXVW4X into the
+// single scratch register V14 at every use, i.e. on every loop iteration. That
+// is pure waste: the value never changes. We now HOIST them — each distinct
+// count a kernel needs is loaded ONCE into its own dedicated VMX register before
+// Label("loop"), and the body just names that register.
+//
+// Register budget (VMX is V0..V31; the arithmetic VSLW/VSRW are VMX-only, so
+// counts must live in V0..V31, not the wider VS0..VS63):
+//
+//	pack   fixed: V0=acc, V1=v, V2=ov, V15=mask
+//	unpack fixed: V1=v, V3=cur, V4=nxt, V13=scratch, V15=mask
+//	V14   = fallback on-demand reload register (only used when the pool spills)
+//
+// hoistPool is the set of registers free in BOTH kernels, used to hold hoisted
+// counts. It has 24 slots; widths needing <=24 distinct counts (every width
+// except the odd/coprime ones, which need up to 31) hoist all of them, and the
+// few remaining widths hoist 24 and reload the spillover from V14 (still
+// correct, just not fully hoisted). countReg maps a count to its hoisted
+// register for the current kernel; counts absent from it spill to V14.
+var hoistPool = func() []string {
+	var p []string
+	for n := 5; n <= 12; n++ {
+		p = append(p, fmt.Sprintf("V%d", n))
+	}
+	for n := 16; n <= 31; n++ {
+		p = append(p, fmt.Sprintf("V%d", n))
+	}
+	return p
+}()
+
 type ppcState struct {
-	f         *emit.File
-	countSym  map[int]string // shift amount -> data symbol
-	maskSym   string
-	maskBits  int
+	f        *emit.File
+	countSym map[int]string // shift amount -> data symbol (deduped data pool)
+	maskSym  string
+	maskBits int
+	countReg map[int]string // shift amount -> hoisted VMX register (per kernel)
 }
 
+// count returns the data symbol for shift amount n, emitting it once.
 func (s *ppcState) count(n int) string {
 	if sym, ok := s.countSym[n]; ok {
 		return sym
@@ -80,9 +114,90 @@ func (s *ppcState) count(n int) string {
 	return sym
 }
 
+// hoistCounts assigns each distinct shift count in `need` (sorted ascending) a
+// dedicated register from hoistPool and emits the one-time LXVW4X load before the
+// loop body. Counts beyond the pool's capacity are left unassigned and fall back
+// to the V14 on-demand reload at their use sites. It (re)initialises s.countReg
+// for the current kernel.
+func (s *ppcState) hoistCounts(fn *ppc64.Builder, need []int) {
+	s.countReg = map[int]string{}
+	for i, n := range need {
+		if i >= len(hoistPool) {
+			break // pool exhausted; remaining counts reload from V14
+		}
+		reg := hoistPool[i]
+		s.countReg[n] = reg
+		fn.Raw("MOVD $%s(SB), R7", s.count(n)).
+			Raw("LXVW4X (R7), %s", vsOf(reg)) // reg = splat(n), loaded once
+	}
+}
+
+// countVecReg returns the register holding the shift-count vector for n. If n
+// was hoisted, that is its dedicated register; otherwise it falls back to a
+// fresh MOVD+LXVW4X reload into the scratch V14 and returns "V14".
+func (s *ppcState) countVecReg(fn *ppc64.Builder, n int) string {
+	if reg, ok := s.countReg[n]; ok {
+		return reg
+	}
+	fn.Raw("MOVD $%s(SB), R7", s.count(n)).
+		Raw("LXVW4X (R7), %s", vsOf("V14"))
+	return "V14"
+}
+
+// packCounts returns the distinct shift counts (sorted ascending) the pack body
+// for width `bits` will use — mirrors emitPackBodyPPC's schedule exactly so the
+// hoist pass and the emit pass agree.
+func packCounts(bits int) []int {
+	set := map[int]bool{}
+	off := 0
+	for k := 0; k < 32; k++ {
+		if off != 0 {
+			set[off] = true // shiftLeftOrPPC n=off
+		}
+		end := off + bits
+		if end < 32 {
+			off = end
+			continue
+		}
+		if end > 32 {
+			set[32-off] = true // shiftRightIntoPPC n=32-off
+			off = end - 32
+		} else {
+			off = 0
+		}
+	}
+	return sortedKeys(set)
+}
+
+// unpackCounts mirrors emitUnpackBodyPPC's schedule.
+func unpackCounts(bits int) []int {
+	set := map[int]bool{}
+	for k := 0; k < 32; k++ {
+		off := (k * bits) % 32
+		end := off + bits
+		if off != 0 {
+			set[off] = true // VSRW off
+		}
+		if end > 32 {
+			set[32-off] = true // VSLW 32-off
+		}
+	}
+	return sortedKeys(set)
+}
+
+func sortedKeys(set map[int]bool) []int {
+	out := make([]int, 0, len(set))
+	for n := range set {
+		out = append(out, n)
+	}
+	sort.Ints(out)
+	return out
+}
+
 // genPackPPC emits packBits{bits}_VSX: pack one 128-int block per loop.
 // R3=dst, R4=src, R5=blocks. V15=mask (loaded once). Acc=V0, V=V1, Ov=V2,
-// count scratch=V14.
+// count scratch=V14. The loop-invariant shift-count vectors are hoisted into
+// dedicated registers before Label("loop") (see hoistCounts).
 func genPackPPC(s *ppcState, bits int, maskSym string) {
 	name := fmt.Sprintf("packBits%d_VSX", bits)
 	loop, done := "loop_"+name, "done_"+name
@@ -91,8 +206,9 @@ func genPackPPC(s *ppcState, bits int, maskSym string) {
 	fn.LoadArg("dst_base", "R3").LoadArg("src_base", "R4").LoadArg("blocks", "R5").
 		Raw("MOVD $%s(SB), R6", maskSym).
 		Raw("LXVW4X (R6), %s", vsOf("V15")). // V15 = mask
-		Raw("CMP R5, $0").Raw("BEQ %s", done).
-		Label(loop)
+		Raw("CMP R5, $0").Raw("BEQ %s", done)
+	s.hoistCounts(fn, packCounts(bits)) // load invariant shift counts once
+	fn.Label(loop)
 
 	s.emitPackBodyPPC(fn, bits)
 
@@ -150,22 +266,18 @@ func (s *ppcState) emitPackBodyPPC(fn *ppc64.Builder, bits int) {
 	}
 }
 
-// shiftLeftOrPPC: acc |= v << n. Loads the count constant for n into V14 then
-// VSLW v<<V14 into Ov(V2), VOR into acc.
+// shiftLeftOrPPC: acc |= v << n. Uses the hoisted count register for n (or a
+// V14 reload if it spilled the pool), VSLW v<<cnt into Ov(V2), VOR into acc.
 func (s *ppcState) shiftLeftOrPPC(fn *ppc64.Builder, v string, n int, acc string) {
-	sym := s.count(n)
-	fn.Raw("MOVD $%s(SB), R7", sym).
-		Raw("LXVW4X (R7), %s", vsOf("V14")).
-		Raw("VSLW %s, V14, V2", v). // V2 = v << V14 (Plan9: data, count, dst)
+	cnt := s.countVecReg(fn, n)
+	fn.Raw("VSLW %s, %s, V2", v, cnt). // V2 = v << cnt (Plan9: data, count, dst)
 		Raw("VOR V2, %s, %s", acc, acc)
 }
 
 // shiftRightIntoPPC: acc = v >> n.
 func (s *ppcState) shiftRightIntoPPC(fn *ppc64.Builder, v string, n int, acc string) {
-	sym := s.count(n)
-	fn.Raw("MOVD $%s(SB), R7", sym).
-		Raw("LXVW4X (R7), %s", vsOf("V14")).
-		Raw("VSRW %s, V14, %s", v, acc) // acc = v >> V14 (Plan9: data, count, dst)
+	cnt := s.countVecReg(fn, n)
+	fn.Raw("VSRW %s, %s, %s", v, cnt, acc) // acc = v >> cnt (Plan9: data, count, dst)
 }
 
 // ppcLoadVec loads src vector k (byte offset 16k) into reg.

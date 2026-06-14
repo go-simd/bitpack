@@ -26,8 +26,9 @@ func genUnpackPPC(s *ppcState, bits int, maskSym string) {
 	fn.LoadArg("dst_base", "R3").LoadArg("src_base", "R4").LoadArg("blocks", "R5").
 		Raw("MOVD $%s(SB), R6", maskSym).
 		Raw("LXVW4X (R6), %s", vsOf("V15")). // V15 = mask
-		Raw("CMP R5, $0").Raw("BEQ %s", done).
-		Label(loop)
+		Raw("CMP R5, $0").Raw("BEQ %s", done)
+	s.hoistCounts(fn, unpackCounts(bits)) // load invariant shift counts once
+	fn.Label(loop)
 
 	s.emitUnpackBodyPPC(fn, bits)
 
@@ -82,13 +83,12 @@ func (s *ppcState) emitUnpackBodyPPC(fn *ppc64.Builder, bits int) {
 	}
 }
 
-// countShiftPPC loads the count constant for n into V14 and emits
-// `op V14, src, dst` (dst = src shifted by n, per word).
+// countShiftPPC uses the hoisted count register for n (or a V14 reload if it
+// spilled the pool) and emits `op src, cnt, dst` (dst = src shifted by n,
+// per word).
 func (s *ppcState) countShiftPPC(fn *ppc64.Builder, op, src string, n int, dst string) {
-	sym := s.count(n)
-	fn.Raw("MOVD $%s(SB), R7", sym).
-		Raw("LXVW4X (R7), %s", vsOf("V14")).
-		Raw("%s %s, V14, %s", op, src, dst) // Plan9: data, count, dst
+	cnt := s.countVecReg(fn, n)
+	fn.Raw("%s %s, %s, %s", op, src, cnt, dst) // Plan9: data, count, dst
 }
 
 // ppcLoadWord loads source word w (byte offset 16w) into reg.

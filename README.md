@@ -98,20 +98,29 @@ expected — a NEON kernel is the obvious next addition.
 
 | arch | cpu model | SIMD cyc/block | SIMD input-B/cyc | scalar input-B/cyc | est. speedup |
 |---|---|---:|---:|---:|---:|
-| ppc64le | pwr9 | 88.3 (512 B) | ~5.8 | ~5.3 (16 B / 3.0 cyc) | **~1.1×** |
+| ppc64le | pwr9 | ~71.5 (512 B) | ~7.1 | ~5.3 (16 B / 3.0 cyc) | **~1.35×** |
 | s390x | z14 | 44.0 (512 B) | ~11.6 | ~2.5 (16 B / 6.5 cyc) | **~4.7×** |
 
-Honest read: against a *tight* scalar word-packer, **bits=8 on pwr9 is only a
-marginal win** (~1.1×) — the VSX `packBits8` loop carries many `LXVW4X` reloads of
-the loop-invariant shift-count vectors (`cnt8`/`cnt16`/`cnt24`) that the generator
-did not hoist, inflating its cyc/block. **s390x z14 is ~4.7×** thanks to its
+Honest read: against a *tight* scalar word-packer, **bits=8 on pwr9 is now a
+~1.35× win** (was ~1.1×). The earlier VSX `packBits8` loop reloaded the
+loop-invariant shift-count vectors (`cnt8`/`cnt16`/`cnt24`) with a
+`MOVD`+`LXVW4X` pair on **every** use — 24 redundant reloads per 128-int block,
+since those counts are compile-time constants that never change. The generator
+now **hoists** each distinct shift-count vector into its own dedicated VMX
+register once before the loop (mask was already hoisted into `V15`), so the body
+just names the register. On the same llvm-mca model that produced the original
+estimate this drops the `packBits8` inner loop from ~115 to ~94 cyc/iter and its
+Block RThroughput from 93.5 to 75.5 (≈19% fewer cycles), scaling the labeled
+cyc/block estimate above from 88.3 to ~71.5. **s390x z14 is ~4.7×** thanks to its
 6-wide vector dispatch and the `VPERM`-based byte assembly. (Against the
 package's real per-element scalar reference, both are far higher — see the bench
 ratios above.) Caveats: llvm-mca idealizes the frontend (perfect dispatch, no
 branch misprediction, no cache/store-buffer stalls), so these are compute upper
 bounds; all instructions in both loops were accepted and modeled by llvm-mca (no
 fallbacks). Wider bit-widths would model differently — this is a single-width
-spot check, not a sweep.
+spot check, not a sweep. Widths whose schedule needs more than 24 distinct shift
+counts (the odd/coprime widths, up to 31) hoist the first 24 and reload the
+remainder from a scratch register, so they keep most — not all — of the win.
 
 The **ppc64le (VSX)** and **s390x (vector facility)** kernels remain
 **qemu-validated** (table tests + byte-identical `FuzzPack`/`FuzzUnpack` pass
