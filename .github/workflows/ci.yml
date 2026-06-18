@@ -12,8 +12,8 @@ jobs:
           - { os: ubuntu-24.04-arm, arch: arm64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with: { go-version: stable }
       - run: go vet ./...
       - run: go test -v ./...
@@ -39,8 +39,8 @@ jobs:
         arch: [ppc64le, s390x]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with: { go-version: stable }
       - name: register qemu binfmt handlers
         run: docker run --privileged --rm tonistiigi/binfmt --install ${{ matrix.arch }}
