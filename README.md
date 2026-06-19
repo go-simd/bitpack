@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/go-simd/brand/main/social/go-simd.png" alt="go-simd/bitpack" width="720"></p>
+
 # bitpack
 
 [![CI](https://github.com/go-simd/bitpack/actions/workflows/ci.yml/badge.svg)](https://github.com/go-simd/bitpack/actions/workflows/ci.yml)
