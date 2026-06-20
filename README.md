@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/go-simd/brand/main/social/go-simd.png" alt="go-simd/bitpack" width="720"></p>
+
 # bitpack
 
 [![CI](https://github.com/go-simd/bitpack/actions/workflows/ci.yml/badge.svg)](https://github.com/go-simd/bitpack/actions/workflows/ci.yml)
@@ -41,8 +43,7 @@ s390x, confirming the big-endian port produces the same bytes as scalar/simdcomp
 ## Test coverage
 
 The Go code is at **100 % statement coverage**, gated in CI on the native amd64
-and arm64 jobs, on **ppc64le natively on real POWER10 silicon** (GCC Compile
-Farm, VSX, Go 1.26.4), and on the **s390x qemu job** (the build fails below
+and arm64 jobs and on the **ppc64le / s390x qemu jobs** (the build fails below
 100 %). Both amd64 kernel paths — the AVX2 block-pair kernel and the SSE finisher
 — are driven directly by the force test on the native AVX2 runner. The coverage
 figure is of the Go code only — the generated `.s` SIMD kernels are not measured
@@ -83,10 +84,9 @@ expected — a NEON kernel is the obvious next addition.
 
 ### ppc64le / s390x — llvm-mca cycle-model estimate
 
-> **Static analysis, NOT a hardware measurement.** ppc64le is now correctness-
-> validated on real POWER10 silicon (see below), but no clean native SIMD-vs-
-> scalar speedup was captured there, and no GitHub-hosted IBM Z runner exists /
-> qemu's TCG is not cycle-accurate, so the cycle model remains the perf signal. Numbers from
+> **Static analysis, NOT a hardware measurement; native perf pending real
+> silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
+> cycle-accurate, so the cycle model is the only defensible signal. Numbers from
 > `llvm-mca` (LLVM 22) fed the **`packBits8`** straight-line inner loop
 > (`packBits8_VSX` / `packBits8_VX`, one 128-`uint32` block = 512 input bytes per
 > iteration) mechanically translated to LLVM asm. Bit-packing has no
@@ -115,30 +115,10 @@ bounds; all instructions in both loops were accepted and modeled by llvm-mca (no
 fallbacks). Wider bit-widths would model differently — this is a single-width
 spot check, not a sweep.
 
-The **ppc64le (VSX)** kernel is now **validated on real POWER10 silicon** (GCC
-Compile Farm, https://portal.cfarm.net/, VSX, Go 1.26.4, June 2026): table tests
-+ byte-identical `FuzzPack`/`FuzzUnpack` pass on native hardware. No clean native
-SIMD-vs-scalar speedup number was captured there, so the cycle-model estimate
-above remains the perf stand-in. The **s390x (vector facility)** kernel stays
-**qemu-validated for correctness only; native throughput pending** a GitHub-
-hosted IBM Z runner.
-
-**riscv64 — measured on a real SpacemiT X60 (RVV 1.0)** (GCC Compile Farm,
-https://portal.cfarm.net/, Go 1.26.4, June 2026). Honest result: **no RVV win on
-this core.** riscv64 currently falls in the *others → scalar* column of the
-kernel table (no RVV kernel is generated yet), so the `simd` sub-benchmark runs
-the scalar path and the two tie — `Pack` bits=8 measures ~302 vs ~299 MB/s, i.e.
-**~parity by construction**, not a vectorisation result. The big SIMD win
-(amd64's ~21–32× above) stands on amd64; it is not present on riscv64 until an
-RVV kernel is added. The build+test suite (table + `FuzzPack`/`FuzzUnpack`) does
-run natively on the X60.
-
-Beyond the six SIMD targets, the scalar reference is now build- and test-
-validated on a **seventh architecture, ppc64 (big-endian)**, on real POWER9
-silicon (GCC Compile Farm) — byte-identical to simdcomp/scalar on a big-endian
-target distinct from s390x's vector kernel. ppc64 BE carries no VSX build tag, so
-it takes the scalar path. Framing: **six SIMD targets, validated on seven
-architectures.**
+The **ppc64le (VSX)** and **s390x (vector facility)** kernels remain
+**qemu-validated** (table tests + byte-identical `FuzzPack`/`FuzzUnpack` pass
+under qemu); **native hardware perf is pending** (no native ppc64le/s390x runners
+in CI) — the estimate above is the cycle-model stand-in.
 
 > Competitor note: `ronanh/intcomp` is the prior pure-Go SIMD-ish integer codec
 > for this space; a head-to-head benchmark against it is a follow-up.
