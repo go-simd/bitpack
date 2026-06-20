@@ -123,6 +123,16 @@ above remains the perf stand-in. The **s390x (vector facility)** kernel stays
 **qemu-validated for correctness only; native throughput pending** a GitHub-
 hosted IBM Z runner.
 
+**riscv64 — measured on a real SpacemiT X60 (RVV 1.0)** (GCC Compile Farm,
+https://portal.cfarm.net/, Go 1.26.4, June 2026). Honest result: **no RVV win on
+this core.** riscv64 currently falls in the *others → scalar* column of the
+kernel table (no RVV kernel is generated yet), so the `simd` sub-benchmark runs
+the scalar path and the two tie — `Pack` bits=8 measures ~302 vs ~299 MB/s, i.e.
+**~parity by construction**, not a vectorisation result. The big SIMD win
+(amd64's ~21–32× above) stands on amd64; it is not present on riscv64 until an
+RVV kernel is added. The build+test suite (table + `FuzzPack`/`FuzzUnpack`) does
+run natively on the X60.
+
 Beyond the six SIMD targets, the scalar reference is now build- and test-
 validated on a **seventh architecture, ppc64 (big-endian)**, on real POWER9
 silicon (GCC Compile Farm) — byte-identical to simdcomp/scalar on a big-endian
