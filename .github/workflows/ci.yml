@@ -1,9 +1,10 @@
 name: ci
 on:
-  push: { branches: [main] }
+  push:
+    branches: [main]
   pull_request:
 jobs:
-  test:
+  native:
     strategy:
       fail-fast: false
       matrix:
@@ -26,39 +27,31 @@ jobs:
       - run: go test -run '^$' -fuzz FuzzPack -fuzztime 15s ./...
       - run: go test -run '^$' -fuzz FuzzUnpack -fuzztime 15s ./...
 
-  # Cross-arch SIMD kernels (ppc64le VSX, s390x vector facility) have no native
-  # GitHub runners; validate them under qemu via binfmt, mirroring how the other
-  # non-amd64/arm64 backends are exercised. We cross-compile a coverage-
-  # instrumented test binary on the host, then run it in a debian:trixie
-  # container under qemu user emulation: full table tests + the byte-identical
-  # FuzzPack/FuzzUnpack seed corpus, plus the 100% coverage gate.
-  qemu:
+  # The non-amd64/arm64 backends have no native GitHub runners, so validate them
+  # under qemu user emulation: the SIMD kernels (ppc64le VSX, s390x big-endian
+  # vector facility) and the scalar-fallback arches (riscv64, loong64). We
+  # cross-compile a coverage-instrumented test binary on the host, then run the
+  # full table tests + 100% coverage gate inside an arch-matched debian container.
+  emulated:
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [ppc64le, s390x]
-    runs-on: ubuntu-latest
+        include:
+          - { arch: riscv64, image: "debian:trixie", qemu: "rv64,v=true,vlen=128" }
+          - { arch: loong64, image: "ghcr.io/loong64/debian:trixie", qemu: "la464" }
+          - { arch: ppc64le, image: "debian:trixie", qemu: "power9" }
+          - { arch: s390x,   image: "debian:trixie", qemu: "qemu" }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with: { go-version: stable }
-      - name: register qemu binfmt handlers
-        run: docker run --privileged --rm tonistiigi/binfmt --install ${{ matrix.arch }}
-      - name: cross-compile coverage test binary
-        env: { GOOS: linux, GOARCH: "${{ matrix.arch }}" }
-        run: go test -covermode=atomic -coverpkg=./... -c -o bitpack.test .
-      - name: run tests + fuzz seeds + 100% coverage gate under qemu
-        run: |
-          docker run --platform linux/${{ matrix.arch }} --rm -v "$PWD":/w -w /w \
-            debian:trixie sh -ec '
-              mkdir -p fz
-              ./bitpack.test -test.v -test.coverprofile=cov.out
-              ./bitpack.test -test.run "^$" -test.fuzz FuzzPack   -test.fuzztime 15s -test.fuzzcachedir fz
-              ./bitpack.test -test.run "^$" -test.fuzz FuzzUnpack -test.fuzztime 15s -test.fuzzcachedir fz
-            '
+      - run: docker run --privileged --rm tonistiigi/binfmt --install all
+      - run: CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go test -c -cover -o /tmp/t.test .
+      - run: docker run --rm --platform linux/${{ matrix.arch }} -e QEMU_CPU=${{ matrix.qemu }} -v /tmp:/t ${{ matrix.image }} /t/t.test -test.v -test.coverprofile=/t/cov.out
       - name: coverage gate (100%)
         run: |
-          pct=$(go tool cover -func=cov.out | awk '/^total:/{print $3}')
+          pct=$(go tool cover -func=/tmp/cov.out | awk '/^total:/{print $3}')
           echo "coverage=$pct"
           [ "$pct" = "100.0%" ] || { echo "coverage below 100%"; exit 1; }
 
