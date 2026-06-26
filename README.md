@@ -82,43 +82,38 @@ arm64 has **no SIMD kernel** (it's in the scalar column of the table above), so 
 Apple Silicon `simd` and `scalar` sub-benchmarks measure ~1.0× of each other, as
 expected — a NEON kernel is the obvious next addition.
 
-### ppc64le / s390x — llvm-mca cycle-model estimate
+### ppc64le — measured on real POWER9; s390x — llvm-mca estimate
 
-> **Static analysis, NOT a hardware measurement; native perf pending real
-> silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
-> cycle-accurate, so the cycle model is the only defensible signal. Numbers from
-> `llvm-mca` (LLVM 22) fed the **`packBits8`** straight-line inner loop
-> (`packBits8_VSX` / `packBits8_VX`, one 128-`uint32` block = 512 input bytes per
-> iteration) mechanically translated to LLVM asm. Bit-packing has no
-> data-dependent branch, so the steady-state model is the whole story. Throughput
-> **varies by bit-width** (wider widths do more shift/OR work per block); bits=8
-> is shown as one clean representative — the other 31 widths were not isolated.
-> Scalar baseline: a tight word-at-a-time shift/OR pack loop modeled the same way
-> (note this is a *hand-optimized* scalar, faster than the package's
-> per-element `packBlockScalar`, so it is a conservative — pessimistic — SIMD
-> baseline; the bench's scalar ratios above are correspondingly larger).
+**ppc64le (VSX) — measured** on a real **POWER9** (GCC Compile Farm, Go 1.26.4,
+June 2026), `bits=8` (one 128-`uint32` block = 512 input bytes):
+
+| op | SIMD (VSX) | scalar word-packer | speedup |
+|---|---:|---:|---:|
+| `Pack`   | ~7,200 MB/s | ~1,020 MB/s | **~7.0×** |
+| `Unpack` | ~8,630 MB/s |   ~760 MB/s | **~11.3×** |
+
+This **overturns the earlier `llvm-mca` cycle-model estimate of ~1.1×** for
+ppc64le. The static model (LLVM 22, fed the `packBits8_VSX` inner loop) predicted
+the un-hoisted `LXVW4X` reloads of the loop-invariant shift-count vectors
+(`cnt8`/`cnt16`/`cnt24`) would make `bits=8` a marginal win — but on real silicon
+the VSX path is **7–11× the (hand-tight) scalar word packer**. A pointed reminder
+that the cycle model is a conservative stand-in, not a measurement: here it was
+**~6–10× too low**.
+
+**s390x (vector facility) — `llvm-mca` cycle-model estimate (no hardware yet):**
+no GitHub-hosted IBM Z runner exists and qemu's TCG is not cycle-accurate, so the
+model is the only signal until an IBM Z box is available.
 
 | arch | cpu model | SIMD cyc/block | SIMD input-B/cyc | scalar input-B/cyc | est. speedup |
 |---|---|---:|---:|---:|---:|
-| ppc64le | pwr9 | 88.3 (512 B) | ~5.8 | ~5.3 (16 B / 3.0 cyc) | **~1.1×** |
 | s390x | z14 | 44.0 (512 B) | ~11.6 | ~2.5 (16 B / 6.5 cyc) | **~4.7×** |
 
-Honest read: against a *tight* scalar word-packer, **bits=8 on pwr9 is only a
-marginal win** (~1.1×) — the VSX `packBits8` loop carries many `LXVW4X` reloads of
-the loop-invariant shift-count vectors (`cnt8`/`cnt16`/`cnt24`) that the generator
-did not hoist, inflating its cyc/block. **s390x z14 is ~4.7×** thanks to its
-6-wide vector dispatch and the `VPERM`-based byte assembly. (Against the
-package's real per-element scalar reference, both are far higher — see the bench
-ratios above.) Caveats: llvm-mca idealizes the frontend (perfect dispatch, no
-branch misprediction, no cache/store-buffer stalls), so these are compute upper
-bounds; all instructions in both loops were accepted and modeled by llvm-mca (no
-fallbacks). Wider bit-widths would model differently — this is a single-width
-spot check, not a sweep.
-
-The **ppc64le (VSX)** and **s390x (vector facility)** kernels remain
-**qemu-validated** (table tests + byte-identical `FuzzPack`/`FuzzUnpack` pass
-under qemu); **native hardware perf is pending** (no native ppc64le/s390x runners
-in CI) — the estimate above is the cycle-model stand-in.
+Caveat (s390x): `llvm-mca` idealizes the frontend (perfect dispatch, no branch
+misprediction, no cache/store-buffer stalls), so this is a compute upper bound —
+and, as the ppc64le case above shows, the model can be far off the real number in
+*either* direction. The s390x kernel is **qemu-validated** for correctness (table
+tests + byte-identical `FuzzPack`/`FuzzUnpack` under qemu); native s390x perf is
+pending real hardware.
 
 > Competitor note: `ronanh/intcomp` is the prior pure-Go SIMD-ish integer codec
 > for this space; a head-to-head benchmark against it is a follow-up.
