@@ -32,9 +32,9 @@ func genUnpackPPC(s *ppcState, bits int, maskSym string) {
 	s.emitUnpackBodyPPC(fn, bits)
 
 	fn.Raw("ADD $%d, R4", 16*bits). // bits words * 16 bytes
-		Raw("ADD $512, R3").        // 128 ints * 4 bytes
-		Raw("ADD $-1, R5").Raw("CMP R5, $0").Raw("BNE %s", loop).
-		Label(done).Ret()
+					Raw("ADD $512, R3"). // 128 ints * 4 bytes
+					Raw("ADD $-1, R5").Raw("CMP R5, $0").Raw("BNE %s", loop).
+					Label(done).Ret()
 	s.f.Add(fn.Func())
 }
 

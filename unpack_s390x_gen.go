@@ -33,9 +33,9 @@ func (s *zState) genUnpackZ(bits int, maskSym string) {
 	s.emitUnpackBodyZ(fn, bits)
 
 	fn.Raw("ADD $%d, R3", 16*bits). // bits words * 16 bytes
-		Raw("ADD $512, R2").        // 128 ints * 4 bytes
-		Raw("ADD $-1, R4").Raw("CMPBNE R4, $0, %s", loop).
-		Label(done).Ret()
+					Raw("ADD $512, R2"). // 128 ints * 4 bytes
+					Raw("ADD $-1, R4").Raw("CMPBNE R4, $0, %s", loop).
+					Label(done).Ret()
 	s.f.Add(fn.Func())
 }
 
@@ -71,8 +71,8 @@ func (s *zState) emitUnpackBodyZ(fn *s390x.Builder, bits int) {
 		if end > 32 {
 			zLoadWord(fn, nxt, word+1)
 			fn.Raw("VESLF $%d, %s, V6", 32-off, nxt). // V6 = Nxt << (32-off)
-				Raw("VO V6, %s, %s", v, v).            // V |= V6
-				Raw("VLR %s, %s", nxt, cur)             // pre-cache next as current
+									Raw("VO V6, %s, %s", v, v). // V |= V6
+									Raw("VLR %s, %s", nxt, cur) // pre-cache next as current
 			loaded = word + 1
 		}
 		fn.Raw("VN V11, %s, %s", v, v) // V &= mask

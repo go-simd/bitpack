@@ -53,10 +53,10 @@ func genPackSSE(f *emit.File, bits int, maskName string) {
 	// Branch-free packing schedule for one block.
 	emitPackBody(fn, bits, false)
 
-	fn.Raw("ADDQ $512, SI").                  // 128 ints * 4 bytes
-		Raw("ADDQ $%d, DI", 16*bits).         // bits words * 16 bytes
-		Raw("DECQ CX").Raw("JNZ %s", loop).
-		Label(done).Ret()
+	fn.Raw("ADDQ $512, SI"). // 128 ints * 4 bytes
+					Raw("ADDQ $%d, DI", 16*bits). // bits words * 16 bytes
+					Raw("DECQ CX").Raw("JNZ %s", loop).
+					Label(done).Ret()
 	f.Add(fn.Func())
 }
 
@@ -74,10 +74,10 @@ func genPackAVX2(f *emit.File, bits int, maskName string) {
 
 	emitPackBody(fn, bits, true)
 
-	fn.Raw("ADDQ $1024, SI").                 // two blocks * 512 bytes
-		Raw("ADDQ $%d, DI", 32*bits).         // two blocks * 16*bits bytes
-		Raw("DECQ CX").Raw("JNZ %s", loop).
-		Label(done).Raw("VZEROUPPER").Ret()
+	fn.Raw("ADDQ $1024, SI"). // two blocks * 512 bytes
+					Raw("ADDQ $%d, DI", 32*bits). // two blocks * 16*bits bytes
+					Raw("DECQ CX").Raw("JNZ %s", loop).
+					Label(done).Raw("VZEROUPPER").Ret()
 	f.Add(fn.Func())
 }
 
@@ -95,8 +95,8 @@ func emitPackBody(fn *amd64.Builder, bits int, avx2 bool) {
 	if avx2 {
 		acc, v, ov = "Y0", "Y1", "Y2"
 	}
-	word := 0       // current output word index
-	off := 0        // bit offset within current word
+	word := 0        // current output word index
+	off := 0         // bit offset within current word
 	haveAcc := false // whether Acc holds pending bits for `word`
 
 	for k := 0; k < 32; k++ {
@@ -187,9 +187,9 @@ func shiftRightInto(fn *amd64.Builder, src string, n int, acc string, avx2 bool)
 // (DI+16*bits+16*word).
 func storeWord(fn *amd64.Builder, acc string, word, bits int, avx2 bool) {
 	if avx2 {
-		fn.Raw("VMOVDQU X%s, %d(DI)", ymmIdx(acc), 16*word).            // block A
-			Raw("VEXTRACTI128 $1, %s, X14", acc).
-			Raw("VMOVDQU X14, %d(DI)", 16*bits+16*word)                 // block B
+		fn.Raw("VMOVDQU X%s, %d(DI)", ymmIdx(acc), 16*word). // block A
+									Raw("VEXTRACTI128 $1, %s, X14", acc).
+									Raw("VMOVDQU X14, %d(DI)", 16*bits+16*word) // block B
 		return
 	}
 	fn.Raw("MOVOU %s, %d(DI)", acc, 16*word)

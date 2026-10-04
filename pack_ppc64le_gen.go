@@ -65,10 +65,10 @@ func vsOf(v string) string {
 // just before the shift. To keep the schedule branch-free and avoid reloads we
 // load a count constant into V14 right before each shift that uses it.
 type ppcState struct {
-	f         *emit.File
-	countSym  map[int]string // shift amount -> data symbol
-	maskSym   string
-	maskBits  int
+	f        *emit.File
+	countSym map[int]string // shift amount -> data symbol
+	maskSym  string
+	maskBits int
 }
 
 func (s *ppcState) count(n int) string {
@@ -96,10 +96,10 @@ func genPackPPC(s *ppcState, bits int, maskSym string) {
 
 	s.emitPackBodyPPC(fn, bits)
 
-	fn.Raw("ADD $512, R4").       // 128 ints * 4 bytes
-		Raw("ADD $%d, R3", 16*bits). // bits words * 16 bytes
-		Raw("ADD $-1, R5").Raw("CMP R5, $0").Raw("BNE %s", loop).
-		Label(done).Ret()
+	fn.Raw("ADD $512, R4"). // 128 ints * 4 bytes
+				Raw("ADD $%d, R3", 16*bits). // bits words * 16 bytes
+				Raw("ADD $-1, R5").Raw("CMP R5, $0").Raw("BNE %s", loop).
+				Label(done).Ret()
 	s.f.Add(fn.Func())
 }
 

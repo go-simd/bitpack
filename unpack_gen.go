@@ -33,9 +33,9 @@ func genUnpackSSE(f *emit.File, bits int, maskName string) {
 	emitUnpackBody(fn, bits, false)
 
 	fn.Raw("ADDQ $%d, SI", 16*bits). // bits words * 16 bytes
-		Raw("ADDQ $512, DI").        // 128 ints * 4 bytes
-		Raw("DECQ CX").Raw("JNZ %s", loop).
-		Label(done).Ret()
+						Raw("ADDQ $512, DI"). // 128 ints * 4 bytes
+						Raw("DECQ CX").Raw("JNZ %s", loop).
+						Label(done).Ret()
 	f.Add(fn.Func())
 }
 
@@ -51,9 +51,9 @@ func genUnpackAVX2(f *emit.File, bits int, maskName string) {
 	emitUnpackBody(fn, bits, true)
 
 	fn.Raw("ADDQ $%d, SI", 32*bits). // two blocks
-		Raw("ADDQ $1024, DI").       // two blocks
-		Raw("DECQ CX").Raw("JNZ %s", loop).
-		Label(done).Raw("VZEROUPPER").Ret()
+						Raw("ADDQ $1024, DI"). // two blocks
+						Raw("DECQ CX").Raw("JNZ %s", loop).
+						Label(done).Raw("VZEROUPPER").Ret()
 	f.Add(fn.Func())
 }
 
@@ -167,9 +167,9 @@ func andMask(fn *amd64.Builder, v string, avx2 bool) {
 
 func storeVec(fn *amd64.Builder, v string, k int, avx2 bool) {
 	if avx2 {
-		fn.Raw("VMOVDQU X%s, %d(DI)", ymmIdx(v), 16*k).               // block A
-			Raw("VEXTRACTI128 $1, %s, X12", v).
-			Raw("VMOVDQU X12, %d(DI)", avx2BlockBWordBits*0+512+16*k) // block B at DI+512
+		fn.Raw("VMOVDQU X%s, %d(DI)", ymmIdx(v), 16*k). // block A
+								Raw("VEXTRACTI128 $1, %s, X12", v).
+								Raw("VMOVDQU X12, %d(DI)", avx2BlockBWordBits*0+512+16*k) // block B at DI+512
 		return
 	}
 	fn.Raw("MOVOU %s, %d(DI)", v, 16*k)
