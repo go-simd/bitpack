@@ -77,10 +77,10 @@ func (s *zState) genPackZ(bits int, maskSym string) {
 
 	s.emitPackBodyZ(fn, bits)
 
-	fn.Raw("ADD $512, R3").       // 128 ints * 4 bytes
-		Raw("ADD $%d, R2", 16*bits). // bits words * 16 bytes
-		Raw("ADD $-1, R4").Raw("CMPBNE R4, $0, %s", loop).
-		Label(done).Ret()
+	fn.Raw("ADD $512, R3"). // 128 ints * 4 bytes
+				Raw("ADD $%d, R2", 16*bits). // bits words * 16 bytes
+				Raw("ADD $-1, R4").Raw("CMPBNE R4, $0, %s", loop).
+				Label(done).Ret()
 	s.f.Add(fn.Func())
 }
 
@@ -97,8 +97,8 @@ func (s *zState) emitPackBodyZ(fn *s390x.Builder, bits int) {
 	haveAcc := false
 
 	for k := 0; k < 32; k++ {
-		zLoadVec(fn, v, k)               // V = bswap(src[k]) (register-correct)
-		fn.Raw("VN V11, %s, %s", v, v)   // V &= mask
+		zLoadVec(fn, v, k)             // V = bswap(src[k]) (register-correct)
+		fn.Raw("VN V11, %s, %s", v, v) // V &= mask
 
 		if off == 0 {
 			fn.Raw("VLR %s, %s", v, acc) // acc = v
@@ -106,7 +106,7 @@ func (s *zState) emitPackBodyZ(fn *s390x.Builder, bits int) {
 		} else {
 			// acc |= v << off
 			fn.Raw("VESLF $%d, %s, %s", off, v, ov). // Ov = v << off
-				Raw("VO %s, %s, %s", ov, acc, acc)
+									Raw("VO %s, %s, %s", ov, acc, acc)
 		}
 		end := off + bits
 		if end < 32 {
